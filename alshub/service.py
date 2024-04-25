@@ -192,10 +192,12 @@ async def get_staff_beamlines(ac: AsyncClient, orcid: str, email: str) -> List[s
         info(f"error asking ALHub for staff roles {orcid}")
         return beamlines
     if response.content:
-        alshub_beamlines = alshub_roles_to_beamline_groups(
-                            response.json()["Beamline Roles"],
-                            ALSHUB_APPROVAL_ROLES)
-        beamlines |= set(alshub_beamlines)
+        beamline_roles = response.json().get("Beamline Roles")
+        if beamline_roles:
+            alshub_beamlines = alshub_roles_to_beamline_groups(
+                                beamline_roles,
+                                ALSHUB_APPROVAL_ROLES)
+            beamlines |= set(alshub_beamlines)
         return beamlines
     else:
         info(f"ALSHub returned no content for roles {orcid}. So no roles found")
