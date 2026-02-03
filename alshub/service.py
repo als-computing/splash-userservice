@@ -25,9 +25,6 @@ ESAF_INFO = "EsafInformation/GetESAF"
 
 logger = logging.getLogger("users.alshub")
 
-context = ssl.create_default_context()
-context.load_verify_locations(cafile="./incommonrsaca.pem")
-
 
 def info(log, *args):
     if logger.isEnabledFor(logging.INFO):
@@ -77,16 +74,22 @@ class ALSHubService(UserService):
 
         user_lb_id = None
         groups = set()
-        async with AsyncClient(base_url=ALSHUB_BASE, verify=context, timeout=10.0) as alsusweb_client:
+        async with AsyncClient(base_url=ALSHUB_BASE, timeout=10.0) as alsusweb_client:
             # query for user information
             if id_type == IDType.email:
                 q_param = "em"
             else:
                 q_param = "or"
+            url = f"{ALSHUB_PERSON}/?{q_param}={id}"
+            full_url = f"{ALSHUB_BASE}/{url}"
             try:
-                response = await alsusweb_client.get(f"{ALSHUB_PERSON}/?{q_param}={id}")
+                debug('Requesting: %s', full_url)
+                response = await alsusweb_client.get(url)
+                debug('Response status: %s', response.status_code)
+                if logger.isEnabledFor(logging.DEBUG) and response.content:
+                    debug('Response body: %s', response.json())
             except Exception as e:
-                raise CommunicationError(f"exception talking to {ALSHUB_PERSON}/?{q_param}={id}") from e
+                raise CommunicationError(f"exception talking to {url}") from e
 
             if response.status_code == 404:
                 raise UserNotFound(f'user {id} not found in ALSHub')
@@ -122,7 +125,7 @@ class ALSHubService(UserService):
             if proposals:
                 groups.update(proposals)
     
-            async with AsyncClient(base_url=ESAF_BASE, verify=context, timeout=10.0) as esaf_client:
+            async with AsyncClient(base_url=ESAF_BASE, timeout=10.0) as esaf_client:
                 esafs = await get_user_esafs(esaf_client, user_lb_id)
                 if esafs:
                     groups.update(esafs)
@@ -139,7 +142,11 @@ class ALSHubService(UserService):
 
 
 async def get_user_proposals(client, lbl_id):
-    response = await client.get(f"{ALSHUB_PROPOSALBY}/?lb={lbl_id}")
+    url = f"{ALSHUB_PROPOSALBY}/?lb={lbl_id}"
+    full_url = f"{ALSHUB_BASE}/{url}"
+    debug('Requesting: %s', full_url)
+    response = await client.get(url)
+    debug('Response status: %s', response.status_code)
     if response.is_error:
         info('error getting user proposals: %s status code: %s message: %s',
              lbl_id,
@@ -148,6 +155,7 @@ async def get_user_proposals(client, lbl_id):
         return {}
     else:
         proposal_response_obj = response.json()
+        debug('Response body: %s', proposal_response_obj)
         proposals = proposal_response_obj.get('Proposals')
         if not proposals:
             info('no proposals for lbnlid: %s', lbl_id)
@@ -161,7 +169,11 @@ async def get_user_proposals(client, lbl_id):
 
 
 async def get_user_esafs(client, lbl_id):
-    response = await client.get(f"{ESAF_INFO}/?lb={lbl_id}")
+    url = f"{ESAF_INFO}/?lb={lbl_id}"
+    full_url = f"{ESAF_BASE}/{url}"
+    debug('Requesting: %s', full_url)
+    response = await client.get(url)
+    debug('Response status: %s', response.status_code)
     if response.is_error:
         info('error getting user esafs: %s status code: %s message: %s',
              lbl_id,
@@ -169,6 +181,7 @@ async def get_user_esafs(client, lbl_id):
              response.json())
     else:
         esafs = response.json()
+        debug('Response body: %s', esafs)
         if not esafs or len(esafs) == 0:
             info('no proposals for lbnlid: %s', lbl_id)
         else:
@@ -180,7 +193,11 @@ async def get_user_esafs(client, lbl_id):
 
 
 async def get_staff_beamlines(ac: AsyncClient, orcid: str, email: str) -> List[str]:
-    response = await ac.get(f"{ALSHUB_PERSON_ROLES}/?or={orcid}")  
+    url = f"{ALSHUB_PERSON_ROLES}/?or={orcid}"
+    full_url = f"{ALSHUB_BASE}/{url}"
+    debug('Requesting: %s', full_url)
+    response = await ac.get(url)
+    debug('Response status: %s', response.status_code)  
     # ADMINS are a list maintained in a python to add users to groups even if they're not maintained in 
     # ALSHub
     beamlines = set()
@@ -192,7 +209,9 @@ async def get_staff_beamlines(ac: AsyncClient, orcid: str, email: str) -> List[s
         info(f"error asking ALHub for staff roles {orcid}")
         return beamlines
     if response.content:
-        beamline_roles = response.json().get("Beamline Roles")
+        response_data = response.json()
+        debug('Response body: %s', response_data)
+        beamline_roles = response_data.get("Beamline Roles")
         if beamline_roles:
             alshub_beamlines = alshub_roles_to_beamline_groups(
                                 beamline_roles,
