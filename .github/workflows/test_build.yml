@@ -39,8 +39,8 @@ jobs:
       shell: bash -l {0}
       run: |
         set -vxeuo pipefail
-        coverage run -m pytest -v
-        coverage report
+        uv run coverage run -m pytest -v
+        uv run coverage report
 
   build-and-push-image:
       name: Build docker image
