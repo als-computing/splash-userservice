@@ -7,13 +7,12 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 
 # Copy project files
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen
+COPY . .
 
-COPY ./ /app
-RUN uv sync --frozen
+# Install dependencies with uv
+RUN uv sync --frozen --no-dev
 
 ENV APP_MODULE=splash_userservice.api:app
 EXPOSE 80
 
-CMD ["uvicorn", "splash_userservice.api:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["uv", "run", "uvicorn", "splash_userservice.api:app", "--host", "0.0.0.0", "--port", "80"]
