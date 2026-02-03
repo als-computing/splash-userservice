@@ -6,7 +6,20 @@ have a common way to access user and group information.
 
 It is intended that the code in [models](./splash_userservice/models.py) and [api](./splash_userservice/api.py) would be the front-end interface, and facility-specific APIs would could then write specific code that maps to those model classes.
 
-A fastapi server is included just because it docuemnts APIs so well. You can start it up and browse to the OpenAPI page that it generates:
+## Installation
+
+This project uses `uv` for dependency management. Install the project with:
+
+    uv sync              # Install all dependencies
+    uv sync --group dev  # Install with development dependencies
+
+Or in editable mode:
+
+    uv pip install -e .
+
+## Running the API Server
+
+A FastAPI server is included that documents the APIs with an interactive OpenAPI page:
 
     pip install -e .
     uvicorn splash_userservice.api:app
