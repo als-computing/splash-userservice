@@ -7,10 +7,10 @@ RUN pip install --no-cache-dir uv
 WORKDIR /app
 
 # Ensure uv has a writable cache directory
-ENV XDG_CACHE_HOME=/app/.cache
-ENV UV_CACHE_DIR=/app/.cache/uv
+ENV XDG_CACHE_HOME=/tmp
+ENV UV_CACHE_DIR=/tmp/uv
 ENV UV_NO_SYNC=1
-RUN mkdir -p /app/.cache/uv
+RUN mkdir -p /tmp/uv
 
 # Copy project files
 COPY . .
