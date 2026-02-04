@@ -93,10 +93,9 @@ class ALSHubService(UserService):
             if response.status_code == 404:
                 raise UserNotFound(f'user {id} not found in ALSHub')
             if response.is_error:
-                info('error getting user: %s status code: %s message: %s',
-                     id,
-                     response.status_code, response.json())
-                return None
+                error = f"error getting user: {id} status code: {response.status_code} message: {response.json()}"
+                logger.error(error)
+                raise CommunicationError(error)
 
             user_response_obj = response.json()
 
