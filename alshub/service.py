@@ -57,7 +57,7 @@ class ALSHubService(UserService):
     def __init__(self) -> None:
         super().__init__()
 
-    async def get_user(self, id: str, id_type: IDType, fetch_groups=True) -> User:
+    async def get_user(self, id: str, id_type: IDType=IDType.orcid, fetch_groups=True) -> User:
         """Return a user object from ALSHub. Makes several calls to ALSHub to assemble user info,
         beamline membership and proposal info, which is used to populate group names.
 
@@ -72,7 +72,6 @@ class ALSHubService(UserService):
             User instance populate with info from ALSHub requests
         """
 
-        user_lb_id = None
         groups = set()
         async with AsyncClient(base_url=ALSHUB_BASE, timeout=10.0) as alsusweb_client:
             # query for user information
@@ -94,24 +93,24 @@ class ALSHubService(UserService):
             if response.status_code == 404:
                 raise UserNotFound(f'user {id} not found in ALSHub')
             if response.is_error:
-                info('error getting user: %s status code: %s message: %s',
-                     id,
-                     response.status_code, response.json())
-                return None
+                error = f"error getting user: {id} status code: {response.status_code} message: {response.json()}"
+                logger.error(error)
+                raise CommunicationError(error)
 
             user_response_obj = response.json()
-            user_lb_id = user_response_obj.get('LBNLID')
-            if not user_lb_id:
-                raise UserNotFound(f'user {id} not found in ALSHub or could not communicate')
-            info('get_user userinfo for orcid: %s  lbid: %s',
-                 id,
-                 user_lb_id)
+
+            orcid = None
+            if id_type == IDType.orcid:
+                orcid = id
+            else:
+                orcid = user_response_obj.get('orcid')
 
             # add staff beamlines to groups list
-            # if id_type == IDType.email:
-            beamlines = await get_staff_beamlines(alsusweb_client, id, user_response_obj['OrgEmail'])
-            if beamlines:
-                groups.update(beamlines)
+            if orcid:
+                beamlines = await get_staff_beamlines(alsusweb_client, orcid, user_response_obj['OrgEmail'])
+                if beamlines:
+                    groups.update(beamlines)
+
             if not fetch_groups:
                 return User(**{
                     "uid": user_response_obj.get('LBNLID'),
@@ -121,14 +120,19 @@ class ALSHubService(UserService):
                     "current_email": user_response_obj.get('OrgEmail'),
                     "orcid": user_response_obj.get('orcid')
                 })
-            proposals = await get_user_proposals(alsusweb_client, user_lb_id)
-            if proposals:
-                groups.update(proposals)
-    
-            async with AsyncClient(base_url=ESAF_BASE, timeout=10.0) as esaf_client:
-                esafs = await get_user_esafs(esaf_client, user_lb_id)
-                if esafs:
-                    groups.update(esafs)
+
+            if not orcid:
+                logging.warning(f"Asked to fetch groups but could not find ORCID for user {id} returned from ALSHub")
+
+            if orcid:
+                proposals = await get_user_proposals(alsusweb_client, orcid)
+                if proposals:
+                    groups.update(proposals)
+        
+                async with AsyncClient(base_url=ESAF_BASE, timeout=10.0) as esaf_client:
+                    esafs = await get_user_esafs(esaf_client, orcid)
+                    if esafs:
+                        groups.update(esafs)
 
             return User(**{
                 "uid": user_response_obj.get('LBNLID'),
@@ -141,15 +145,15 @@ class ALSHubService(UserService):
             })
 
 
-async def get_user_proposals(client, lbl_id):
-    url = f"{ALSHUB_PROPOSALBY}/?lb={lbl_id}"
+async def get_user_proposals(client, orcid):
+    url = f"{ALSHUB_PROPOSALBY}/?or={orcid}"
     full_url = f"{ALSHUB_BASE}/{url}"
     debug('Requesting: %s', full_url)
     response = await client.get(url)
     debug('Response status: %s', response.status_code)
     if response.is_error:
         info('error getting user proposals: %s status code: %s message: %s',
-             lbl_id,
+             orcid,
              response.status_code,
              response.json())
         return {}
@@ -158,35 +162,35 @@ async def get_user_proposals(client, lbl_id):
         debug('Response body: %s', proposal_response_obj)
         proposals = proposal_response_obj.get('Proposals')
         if not proposals:
-            info('no proposals for lbnlid: %s', lbl_id)
+            info('no proposals for orcid: %s', orcid)
             return []
         else:
-            info('get_user userinfo for lblid: %s proposals: %s', 
-                 lbl_id,
+            info('get_user userinfo for orcid: %s proposals: %s', 
+                 orcid,
                  str(proposals))
 
             return {proposal_id for proposal_id in proposals}
 
 
-async def get_user_esafs(client, lbl_id):
-    url = f"{ESAF_INFO}/?lb={lbl_id}"
+async def get_user_esafs(client, orcid):
+    url = f"{ESAF_INFO}/?or={orcid}"
     full_url = f"{ESAF_BASE}/{url}"
     debug('Requesting: %s', full_url)
     response = await client.get(url)
     debug('Response status: %s', response.status_code)
     if response.is_error:
         info('error getting user esafs: %s status code: %s message: %s',
-             lbl_id,
+             orcid,
              response.status_code,
              response.json())
     else:
         esafs = response.json()
         debug('Response body: %s', esafs)
         if not esafs or len(esafs) == 0:
-            info('no proposals for lbnlid: %s', lbl_id)
+            info('no proposals for orcid: %s', orcid)
         else:
-            debug('get_user userinfo for lblid: %s proposals: %s', 
-                  lbl_id,
+            debug('get_user userinfo for orcid: %s proposals: %s', 
+                  orcid,
                   str(esafs))
 
             return {esaf["ProposalFriendlyId"] for esaf in esafs}
@@ -201,10 +205,8 @@ async def get_staff_beamlines(ac: AsyncClient, orcid: str, email: str) -> List[s
     # ADMINS are a list maintained in a python to add users to groups even if they're not maintained in 
     # ALSHub
     beamlines = set()
-    if ADMINS:
-        admin = ADMINS.get(email)
-        if admin:
-            beamlines.update(ADMINS.get(email))
+    if email and ADMINS and (email in ADMINS):
+        beamlines.update(ADMINS.get(email))
     if response.is_error:
         info(f"error asking ALHub for staff roles {orcid}")
         return beamlines
