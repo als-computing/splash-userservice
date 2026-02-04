@@ -4,8 +4,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # Disable development dependencies in uv
 ENV UV_NO_DEV=1
 
-# Set working directory for all subsequent commands
+RUN useradd --create-home appuser
+RUN mkdir -p /app  # has this already been created?
+RUN chown --recursive appuser:root /app
 WORKDIR /app
+USER appuser
 
 # Python environment variables:
 # Prevents Python from writing .pyc files to disk
