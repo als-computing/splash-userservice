@@ -72,7 +72,6 @@ class ALSHubService(UserService):
             User instance populate with info from ALSHub requests
         """
 
-        user_lb_id = None
         groups = set()
         async with AsyncClient(base_url=ALSHUB_BASE, timeout=10.0) as alsusweb_client:
             # query for user information
@@ -100,13 +99,6 @@ class ALSHubService(UserService):
                 return None
 
             user_response_obj = response.json()
-            #user_lb_id = user_response_obj.get('LBNLID')
-            #if not user_lb_id:
-            #    # This does not even warrant a warning at this point.
-            #    logging.warning(f"no LBNLID for user {id} returned from ALSHub")
-            #info('get_user userinfo for orcid: %s  lbid: %s',
-            #     id,
-            #     user_lb_id)
 
             orcid = None
             if id_type == IDType.orcid:
