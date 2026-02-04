@@ -7,13 +7,10 @@ ENV UV_NO_DEV=1
 # Set working directory for all subsequent commands
 WORKDIR /app
 
-# Ensure uv has a writable cache directory
-ENV XDG_CACHE_HOME=/tmp
-ENV UV_CACHE_DIR=/tmp/uv
-ENV UV_NO_SYNC=1
-RUN mkdir -p /tmp/uv
+# Python environment variables:
+# Prevents Python from writing .pyc files to disk
+ENV PYTHONDONTWRITEBYTECODE=1
 
-# Copy project files
 COPY . .
 
 # Install using uv
