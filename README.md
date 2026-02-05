@@ -10,8 +10,11 @@ It is intended that the code in [models](./splash_userservice/models.py) and [ap
 
 This project uses `uv` for dependency management. Install the project with:
 
-    uv sync              # Install all dependencies
-    uv sync --group dev  # Install with development dependencies
+```bash
+uv venv --python 3.12 # or greater
+source .venv/bin/activate
+uv pip install --all-extras -r pyproject.toml   # Install all dependencies
+```
 
 Or in editable mode:
 
@@ -69,4 +72,4 @@ A bash version is also available at `scripts/test_user.sh` for making direct HTT
 - `ORCID_ID`: Override ORCID (default: 0000-0000-0000-0000)
 - `SKIP_LBNL_REQUIRED_CALLS`: Skip proposals/ESAF calls if LBNLID not found
 
-This project in a very early stage. Te [NSLS-II Scipy Cookiecutter](https://github.com/NSLS-II/scientific-python-cookiecutter) was used to start the project, but much is not yet being taken advantage of (especially documentation).
+This project in a very early stage. The [NSLS-II Scipy Cookiecutter](https://github.com/NSLS-II/scientific-python-cookiecutter) was used to start the project, but much is not yet being taken advantage of (especially documentation).
