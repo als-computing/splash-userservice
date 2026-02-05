@@ -201,6 +201,8 @@ class ALSHubService(UserService):
                     groups.update(esaf_ids)
                     for esaf in esaf_objects:
 
+                        # In each ESAF, we are only concerned with the role of the user we are fetching into for,
+                        # so we attempt to find their ORCID in various fields and ignore any that don't match.
                         roles = []
                         if "PI" in esaf:
                             if "Orcid" in esaf["PI"] and esaf["PI"]["Orcid"] == orcid:
@@ -214,11 +216,15 @@ class ALSHubService(UserService):
                                     roles.append("participant")
                                     break
 
+                        # Look through all the schedules events and find the earlier start date
+                        # and latest end date.
                         earliest_start = None
                         latest_end = None
                         if "ScheduledEvents" in esaf:
                             for event in esaf["ScheduledEvents"]:
                                 if "StartDate" in event:
+                                    # In the future we may also want to incorporate the time,
+                                    # but for now this level of granularity is sufficient.
                                     start = parse_esaf_date(event["StartDate"])
                                     if start and ((earliest_start is None) or (start < earliest_start)):
                                         earliest_start = start
@@ -226,7 +232,6 @@ class ALSHubService(UserService):
                                     end = parse_esaf_date(event["EndDate"])
                                     if end and ((latest_end is None) or (end > latest_end)):
                                         latest_end = end
-                        
                         earliest_start_field = earliest_start.isoformat() if earliest_start else None
                         latest_end_field = latest_end.isoformat() if latest_end else None
 
@@ -257,7 +262,9 @@ class ALSHubService(UserService):
 
 def parse_esaf_date(date_str: str | None) -> datetime | None:
     """Parse a date string from ALS ESAF data into a datetime object.
-    The expected format is 'MM/DD/YYYY'. If parsing fails, None is returned.
+    The expected format is 'MM/DD/YYYY', and all dates are assumed
+    to be in the America/Los_Angeles timezone.
+    If parsing fails, None is returned.
 
     Parameters
     ----------
