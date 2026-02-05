@@ -5,9 +5,11 @@ import ssl
 from typing import List
 from httpx import AsyncClient
 from starlette.config import Config
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from alshub.config.beamline_admins import ADMINS
-from splash_userservice.models import User
+from splash_userservice.models import User, V2UserEsaf, V2UserGroupDetails
 from splash_userservice.service import IDType, UserService, UserNotFound, CommunicationError
 
 config = Config(".env")
@@ -131,8 +133,9 @@ class ALSHubService(UserService):
         
                 async with AsyncClient(base_url=ESAF_BASE, timeout=10.0) as esaf_client:
                     esafs = await get_user_esafs(esaf_client, orcid)
-                    if esafs:
-                        groups.update(esafs)
+                    esaf_ids = {esaf["ProposalFriendlyId"] for esaf in esafs}
+                    if esaf_ids:
+                        groups.update(esaf_ids)
 
             return User(**{
                 "uid": user_response_obj.get('LBNLID'),
@@ -143,6 +146,134 @@ class ALSHubService(UserService):
                 "orcid": user_response_obj.get('orcid'),
                 "groups": list(groups)
             })
+
+    
+    async def v2_get_user_groupdetails(self, orcid: str) -> V2UserGroupDetails:
+        """Return a V2UserGroupDetails object. Makes several calls to ALSHub to assemble user info,
+        beamline membership and proposal info, which is used to populate group names,
+        proposals, esafs, and beamlines.
+
+        Parameters
+        ----------
+        orcid : str
+            User's orcid
+
+        Returns
+        -------
+        V2UserGroupDetails
+            V2UserGroupDetails instance populated with info from ALSHub requests
+        """
+        async with AsyncClient(base_url=ALSHUB_BASE, timeout=10.0) as alsusweb_client:
+            # query for user information
+            url = f"{ALSHUB_PERSON}/?or={orcid}"
+            full_url = f"{ALSHUB_BASE}/{url}"
+            try:
+                debug('Requesting: %s', full_url)
+                response = await alsusweb_client.get(url)
+                debug('Response status: %s', response.status_code)
+                if logger.isEnabledFor(logging.DEBUG) and response.content:
+                    debug('Response body: %s', response.json())
+            except Exception as e:
+                raise CommunicationError(f"exception talking to {url}") from e
+
+            if response.status_code == 404:
+                raise UserNotFound(f'user {id} not found in ALSHub')
+            if response.is_error:
+                error = f"error getting user: {id} status code: {response.status_code} message: {response.json()}"
+                logger.error(error)
+                raise CommunicationError(error)
+
+            user_response_obj = response.json()
+
+            # fetch staff beamlines
+            beamlines = await get_staff_beamlines(alsusweb_client, orcid, user_response_obj['OrgEmail'])
+            groups = set(beamlines)
+
+            proposals = await get_user_proposals(alsusweb_client, orcid)
+            if proposals:
+                groups.update(proposals)
+
+            esafs=[]
+            async with AsyncClient(base_url=ESAF_BASE, timeout=10.0) as esaf_client:
+                esaf_objects = await get_user_esafs(esaf_client, orcid)
+                if esaf_objects:
+                    esaf_ids = {esaf["ProposalFriendlyId"] for esaf in esaf_objects}
+                    groups.update(esaf_ids)
+                    for esaf in esaf_objects:
+
+                        roles = []
+                        if "PI" in esaf:
+                            if "Orcid" in esaf["PI"] and esaf["PI"]["Orcid"] == orcid:
+                                roles.append("pi")
+                        if "ExpLead" in esaf:
+                            if "Orcid" in esaf["ExpLead"] and esaf["ExpLead"]["Orcid"] == orcid:
+                                roles.append("explead")
+                        if "Participants" in esaf:
+                            for participant in esaf["Participants"]:
+                                if "Orcid" in participant and participant["Orcid"] == orcid:
+                                    roles.append("participant")
+                                    break
+
+                        earliest_start = None
+                        latest_end = None
+                        if "ScheduledEvents" in esaf:
+                            for event in esaf["ScheduledEvents"]:
+                                if "StartDate" in event:
+                                    start = parse_esaf_date(event["StartDate"] or "")
+                                    if start and ((earliest_start is None) or (start < earliest_start)):
+                                        earliest_start = start
+                                if "EndDate" in event:
+                                    end = parse_esaf_date(event["EndDate"] or "")
+                                    if end and ((latest_end is None) or (end > latest_end)):
+                                        latest_end = end
+                                        pass
+                        
+                        earliest_start_field = earliest_start.isoformat() if earliest_start else None
+                        latest_end_field = latest_end.isoformat() if latest_end else None
+
+                        esaf_entry = V2UserEsaf(
+                            roles=roles,
+                            id=esaf.get("EsafFriendlyId"),
+                            title=esaf.get("Title"),
+                            proposal_id=esaf.get("ProposalFriendlyId"),
+                            beamline_id=esaf.get("Beamline"),
+                            earliest_start=earliest_start_field,
+                            latest_end=latest_end_field
+                        )
+                        esafs.append(esaf_entry)  
+
+            return V2UserGroupDetails(
+                uid=user_response_obj.get('LBNLID') or None,
+                given_name=user_response_obj.get('FirstName') or None,
+                family_name=user_response_obj.get('LastName') or None,
+                current_institution=user_response_obj.get('Institution') or None,
+                current_email=user_response_obj.get('OrgEmail') or None,
+                orcid=orcid,
+                groups=list(groups),
+                beamlines=list(beamlines),
+                proposals=list(proposals) if proposals else [],
+                esafs=esafs
+            )
+
+
+def parse_esaf_date(date_str: str) -> datetime | None:
+    """Parse a date string from ALS ESAF data into a datetime object.
+    The expected format is 'MM/DD/YYYY'. If parsing fails, None is returned.
+
+    Parameters
+    ----------
+    date_str : str
+        Date string in 'MM/DD/YYYY' format.
+
+    Returns
+    -------
+    datetime
+        Parsed datetime object or None if parsing fails.
+    """
+    try:
+        return datetime.strptime(date_str, "%m/%d/%Y").replace(tzinfo=ZoneInfo("America/Los_Angeles"))
+    except ValueError:
+        return None
 
 
 async def get_user_proposals(client, orcid):
@@ -183,17 +314,18 @@ async def get_user_esafs(client, orcid):
              orcid,
              response.status_code,
              response.json())
-    else:
-        esafs = response.json()
-        debug('Response body: %s', esafs)
-        if not esafs or len(esafs) == 0:
-            info('no proposals for orcid: %s', orcid)
-        else:
-            debug('get_user userinfo for orcid: %s proposals: %s', 
-                  orcid,
-                  str(esafs))
+        return []
 
-            return {esaf["ProposalFriendlyId"] for esaf in esafs}
+    esafs = response.json()
+    debug('Response body: %s', esafs)
+    if not esafs or len(esafs) == 0:
+        info('no proposals for orcid: %s', orcid)
+        return []
+
+    debug('get_user userinfo for orcid: %s proposals: %s', 
+            orcid,
+            str(esafs))
+    return esafs
 
 
 async def get_staff_beamlines(ac: AsyncClient, orcid: str, email: str) -> List[str]:

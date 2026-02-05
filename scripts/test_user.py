@@ -63,7 +63,40 @@ async def test_user_async(
         
         if user:
             # Convert User model to dict for pretty printing
-            user_dict = user.dict()
+            user_dict = user.model_dump()
+            typer.echo(json.dumps(user_dict, indent=2))
+            typer.echo(f"\n==> Successfully fetched user: {user.uid}", err=True)
+            return 0
+        else:
+            typer.echo(f"Error: No user returned from service.", err=True)
+            return 1
+            
+    except Exception as e:
+        typer.echo(f"Error: {type(e).__name__}: {e}", err=True)
+        logger.exception("Exception during user fetch")
+        return 1
+
+
+async def test_v2_user_details_async(
+    orcid_id: str,
+) -> int:
+    """
+    Test the v2 user details call by fetching a user and their group details.
+    
+    Parameters
+    ----------
+    orcid_id : str
+        User identifier (ORCID)
+    """
+    service = ALSHubService()
+        
+    try:
+        typer.echo(f"==> Fetching user with ORCID: {orcid_id}", err=True)
+        user = await service.v2_get_user_groupdetails(orcid_id)
+        
+        if user:
+            # Convert User model to dict for pretty printing
+            user_dict = user.model_dump()
             typer.echo(json.dumps(user_dict, indent=2))
             typer.echo(f"\n==> Successfully fetched user: {user.uid}", err=True)
             return 0
@@ -91,10 +124,21 @@ def main(
         "--no-groups",
         help="Don't fetch groups (proposals, ESAFs, beamlines)"
     ),
+    v2: bool = typer.Option(
+        False,
+        "--v2",
+        help="Use v2 user group details method"
+    ),
 ) -> None:
     """
     Test script for splash-userservice that calls ALSHubService directly.
     """
+    if v2:
+        exit_code = asyncio.run(
+            test_v2_user_details_async(user_id)
+        )
+        raise typer.Exit(exit_code)
+    
     exit_code = asyncio.run(
         test_user_async(user_id, id_type=id_type, fetch_groups=not no_groups)
     )

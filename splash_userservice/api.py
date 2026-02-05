@@ -11,7 +11,8 @@ from starlette.config import Config
 from starlette.status import HTTP_403_FORBIDDEN
 from splash_userservice.models import (
     User,
-    UniqueId
+    UniqueId,
+    V2UserGroupDetails
 )
 from splash_userservice.service import CommunicationError, IDType, UserService, UserNotFound
 
@@ -106,6 +107,23 @@ async def get_user(
         logger.error("Exception in service", e.args[0])
         raise HTTPException(500) from e
 
+
+@app.get("/api/v2/users/orcid/{orcid}/groupdetails")
+async def v2_get_user_groupdetails(
+        orcid: str,
+        user_service: UserService = Depends(get_service),
+        api_key: APIKey = Depends(get_api_key_from_request)) -> V2UserGroupDetails:
+
+    await validate_api_key(api_key)
+    logger.info(f"Received groupdetails request for {orcid}")
+    try:
+        return await user_service.v2_get_user_groupdetails(orcid)
+    except UserNotFound as e:
+        raise HTTPException(404, detail=e.args[0]) from e
+    except CommunicationError as e:
+        logger.error("Exception in service", e.args[0])
+        raise HTTPException(500) from e
+    
 
 async def validate_api_key(api_key: str):
     if api_key != API_KEY:
