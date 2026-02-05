@@ -123,7 +123,7 @@ async def v2_get_user_groupdetails(
     except CommunicationError as e:
         logger.error("Exception in service", e.args[0])
         raise HTTPException(500) from e
-    
+
 
 async def validate_api_key(api_key: str):
     if api_key != API_KEY:

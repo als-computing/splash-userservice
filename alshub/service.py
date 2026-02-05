@@ -219,14 +219,13 @@ class ALSHubService(UserService):
                         if "ScheduledEvents" in esaf:
                             for event in esaf["ScheduledEvents"]:
                                 if "StartDate" in event:
-                                    start = parse_esaf_date(event["StartDate"] or "")
+                                    start = parse_esaf_date(event["StartDate"])
                                     if start and ((earliest_start is None) or (start < earliest_start)):
                                         earliest_start = start
                                 if "EndDate" in event:
-                                    end = parse_esaf_date(event["EndDate"] or "")
+                                    end = parse_esaf_date(event["EndDate"])
                                     if end and ((latest_end is None) or (end > latest_end)):
                                         latest_end = end
-                                        pass
                         
                         earliest_start_field = earliest_start.isoformat() if earliest_start else None
                         latest_end_field = latest_end.isoformat() if latest_end else None
@@ -256,7 +255,7 @@ class ALSHubService(UserService):
             )
 
 
-def parse_esaf_date(date_str: str) -> datetime | None:
+def parse_esaf_date(date_str: str | None) -> datetime | None:
     """Parse a date string from ALS ESAF data into a datetime object.
     The expected format is 'MM/DD/YYYY'. If parsing fails, None is returned.
 
@@ -270,6 +269,8 @@ def parse_esaf_date(date_str: str) -> datetime | None:
     datetime
         Parsed datetime object or None if parsing fails.
     """
+    if not date_str:
+        return None
     try:
         return datetime.strptime(date_str, "%m/%d/%Y").replace(tzinfo=ZoneInfo("America/Los_Angeles"))
     except ValueError:
